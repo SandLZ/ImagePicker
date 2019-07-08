@@ -20,6 +20,7 @@ typedef enum : NSUInteger {
 } SOSPickerOutputType;
 
 @interface SOSPicker () <GMImagePickerControllerDelegate>
+
 @end
 
 @implementation SOSPicker
@@ -48,19 +49,57 @@ typedef enum : NSUInteger {
         
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:message];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        [self showPermissionSettingAlert];
     } else if (status == PHAuthorizationStatusNotDetermined) {
         // Access has not been determined. requestAuthorization: is available
-        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {}];
-        
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus status) {
+            CDVPluginResult* pluginResult = nil;
+            if (status == PHAuthorizationStatusAuthorized) {
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"hasPermissions"];
+            }else{
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"noPermissions"];
+                NSLog(@"Denied or Restricted");
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }];
     } else if (status == PHAuthorizationStatusRestricted) {
         NSString* message = @"Access has been restricted. Change your setting > Privacy > Photo enable";
         NSLog(@"%@", message);
         
         CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:message];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        [self showPermissionSettingAlert];
     }
+}
+
+- (void) showPermissionSettingAlert {
+    __weak SOSPicker* weakSelf = self;
+    NSString* settingsButton = (&UIApplicationOpenSettingsURLString != NULL)? NSLocalizedString(@"去开启", nil): nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[[UIAlertView alloc] initWithTitle:[[NSBundle mainBundle]
+                                             objectForInfoDictionaryKey:@"CFBundleDisplayName"]
+                                    message:NSLocalizedString(@"无法访问相册，请前往设置页面开启相册访问权限", nil)
+                                   delegate:weakSelf
+                          cancelButtonTitle:NSLocalizedString(@"取消", nil)
+                          otherButtonTitles:settingsButton, nil] show];
+    });
+}
+
+// Delegate for camera permission UIAlertView
+- (void)alertView:(UIAlertView *)alertView clickedButtonAtIndex:(NSInteger)buttonIndex
+{
+    // If Settings button (on iOS 8), open the settings app
+    if (buttonIndex == 1) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-pointer-compare"
+        if (&UIApplicationOpenSettingsURLString != NULL) {
+            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+        }
+#pragma clang diagnostic pop
+    }
+    
+    // Dismiss the view
+    [[self.viewController presentingViewController] dismissViewControllerAnimated:YES completion:nil];
 }
 
 - (void) getPictures:(CDVInvokedUrlCommand *)command {
